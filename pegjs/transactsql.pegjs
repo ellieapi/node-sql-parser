@@ -1106,7 +1106,8 @@ create_constraint_foreign
   p:('FOREIGN KEY'i) __
   i:column? __
   de:cte_column_definition __
-  id:reference_definition? {
+  id:reference_definition? __
+  not_enforced: KW_NOT_ENFORCED? {
     return {
         constraint: kc && kc.constraint,
         definition: de,
@@ -1114,7 +1115,8 @@ create_constraint_foreign
         keyword: kc && kc.keyword,
         index: i,
         resource: 'constraint',
-        reference_definition: id
+        reference_definition: id,
+        enforced: not_enforced
       }
   }
 
@@ -3136,6 +3138,7 @@ KW_SPATIAL  = "SPATIAL"i  !ident_start { return 'SPATIAL'; }
 KW_UNIQUE     = "UNIQUE"i  !ident_start { return 'UNIQUE'; }
 KW_CLUSTERED     = "CLUSTERED"i  !ident_start { return 'CLUSTERED'; }
 KW_NONCLUSTERED  = "NONCLUSTERED"i  !ident_start { return 'NONCLUSTERED'; }
+KW_NOT_ENFORCED = "NOT ENFORCED"i !ident_start { return 'NOT ENFORCED'; }
 KW_KEY_BLOCK_SIZE = "KEY_BLOCK_SIZE"i !ident_start { return 'KEY_BLOCK_SIZE'; }
 KW_COMMENT     = "COMMENT"i  !ident_start { return 'COMMENT'; }
 KW_CONSTRAINT  = "CONSTRAINT"i  !ident_start { return 'CONSTRAINT'; }
