@@ -354,10 +354,24 @@ describe('transactsql', () => {
       expect(getParsedSql(sql)).to.be.equal("IF DATENAME([weekday], GETDATE()) IN (N'Saturday', N'Sunday') SELECT 'Weekend'; ELSE SELECT 'Weekday';")
     })
   })
-  it('should support NOT ENFORCED in query', () => {
-    const notEnforcedSQL = `ALTER TABLE [Orders] ADD CONSTRAINT [FK_Orders_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]) NOT ENFORCED`
-    expect(getParsedSql(notEnforcedSQL)).to.be.equal(notEnforcedSQL)
+
+  describe('should support NOT ENFORCED in ADD CONSTRAINT pk/fk queries', () => {
+      it('should support NOT ENFORCED in ADD CONSTRAINT FOREIGN KEY', () => {
+        const notEnforcedFKSQL = `ALTER TABLE [Orders] ADD CONSTRAINT [FK_Orders_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]) NOT ENFORCED`
+        expect(getParsedSql(notEnforcedFKSQL)).to.be.equal(notEnforcedFKSQL)
+      })
+
+      it('should support NOT ENFORCED in ADD CONSTRAINT PRIMARY KEY', () => {
+        const notEnforcedPKSQL = `ALTER TABLE [target_table_with_meta_017] ADD CONSTRAINT [PK_target_table_with_meta_017] PRIMARY KEY NONCLUSTERED ([PK_atr]) NOT ENFORCED`
+        expect(getParsedSql(notEnforcedPKSQL)).to.be.equal(notEnforcedPKSQL)
+      })
+
+      it('should ', () => {
+        const notEnforcedUniqueSQL = `ALTER TABLE [target_table_with_meta_017] ADD CONSTRAINT [UQ_target_table_with_meta_017] UNIQUE NONCLUSTERED ([Unique_atr])`
+        expect(getParsedSql(notEnforcedUniqueSQL)).to.be.equal(notEnforcedUniqueSQL)
+      })
   })
+
   describe('from values', () => {
     it('should support from values', () => {
       const sql = `select * from (values (0, 0), (1, null), (null, 2), (3, 4)) as t(a,b)`

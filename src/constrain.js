@@ -12,6 +12,7 @@ function constraintDefinitionToSQL(constraintDefinition) {
   const {
     constraint,
     constraint_type: constraintType,
+    clustered,
     enforced,
     index,
     keyword,
@@ -24,6 +25,9 @@ function constraintDefinitionToSQL(constraintDefinition) {
   let constraintTypeStr = toUpper(constraintType)
   if (database === 'sqlite' && constraintTypeStr === 'UNIQUE KEY') constraintTypeStr = 'UNIQUE'
   constraintSQL.push(constraintTypeStr)
+  if (database === 'transactsql' && clustered) {
+    constraintSQL.push(clustered)
+  }
   constraintSQL.push(database !== 'sqlite' && identifierToSql(index))
   constraintSQL.push(...indexTypeAndOptionToSQL(constraintDefinition))
   constraintSQL.push(...columnReferenceDefinitionToSQL(referenceDefinition))
