@@ -354,6 +354,10 @@ describe('transactsql', () => {
       expect(getParsedSql(sql)).to.be.equal("IF DATENAME([weekday], GETDATE()) IN (N'Saturday', N'Sunday') SELECT 'Weekend'; ELSE SELECT 'Weekday';")
     })
   })
+  it('should support NOT ENFORCED in query', () => {
+    const notEnforcedSQL = `ALTER TABLE [Orders] ADD CONSTRAINT [FK_Orders_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]) NOT ENFORCED`
+    expect(getParsedSql(notEnforcedSQL)).to.be.equal(notEnforcedSQL)
+  })
   describe('from values', () => {
     it('should support from values', () => {
       const sql = `select * from (values (0, 0), (1, null), (null, 2), (3, 4)) as t(a,b)`
