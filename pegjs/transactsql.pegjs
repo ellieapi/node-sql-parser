@@ -1057,7 +1057,8 @@ create_constraint_primary
   p:('PRIMARY KEY'i) __
   t:index_type? __
   de:cte_column_definition __
-  id:create_with_index_options? {
+  id:create_with_index_options? __
+  not_enforced: KW_NOT_ENFORCED? {
     return {
         constraint: kc && kc.constraint,
         definition: de,
@@ -1065,6 +1066,7 @@ create_constraint_primary
         keyword: kc && kc.keyword,
         index_type: t,
         resource: 'constraint',
+        enforced: not_enforced,
         ...id,
       }
   }
@@ -1072,11 +1074,13 @@ create_constraint_primary
 create_constraint_unique
   = kc:constraint_name? __
   u:KW_UNIQUE __
+  nc: KW_NONCLUSTERED? __
   p:(KW_INDEX / KW_KEY)? __
   i:column? __
   t:index_type? __
   de:cte_column_definition __
-  id:index_options? {
+  id:index_options? __
+  not_enforced: KW_NOT_ENFORCED? {
     return {
         constraint: kc && kc.constraint,
         definition: de,
@@ -1085,7 +1089,9 @@ create_constraint_unique
         index_type: t,
         index: i,
         resource: 'constraint',
-        index_options: id
+        index_options: id,
+        enforced: not_enforced,
+        clustered: nc
       }
   }
 
