@@ -448,6 +448,13 @@ describe('snowflake', () => {
         'SELECT "bi_json"."limit" AS "limit" FROM "modelc"'
       ]
     },
+    {
+      title: "USING statement",
+      sql: [
+        'CREATE TABLE "test" ("id" BIGINT) USING data_source', 
+        'CREATE TABLE "test" ("id" BIGINT) USING data_source',
+      ]
+    },
   ]
   SQL_LIST.forEach(sqlInfo => {
     const { title, sql } = sqlInfo

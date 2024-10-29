@@ -424,7 +424,7 @@ create_table_stmt
           as: as && as[0].toLowerCase(),
           query_expr: qe && qe.ast,
           create_definitions: c,
-          table_options: to
+          table_options: to,
         }
       }
     }

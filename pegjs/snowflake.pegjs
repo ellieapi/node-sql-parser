@@ -513,6 +513,10 @@ create_domain_stmt
         ...getLocationObject(),
       }
     }
+using_stmt
+  = KW_USING __ stmt:ident {
+    return { stmt: stmt }
+  }
 create_table_stmt
   = a:KW_CREATE __
     or:(KW_OR __ KW_REPLACE)? __
@@ -524,7 +528,8 @@ create_table_stmt
     to:table_options? __
     ir:(KW_IGNORE / KW_REPLACE)? __
     as:KW_AS? __
-    qe:union_stmt? {
+    qe:union_stmt? __
+    using: using_stmt? {
       tableList.add(`create::${[t.db, t.schema].filter(Boolean).join('.') || null}::${t.table}`)
       return {
         tableList: Array.from(tableList),
@@ -540,7 +545,8 @@ create_table_stmt
           as: as && as[0].toLowerCase(),
           query_expr: qe && qe.ast,
           create_definitions: c,
-          table_options: to
+          table_options: to,
+          using: using && using.stmt
         },
         ...getLocationObject(),
       }

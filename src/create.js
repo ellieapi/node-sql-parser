@@ -76,6 +76,7 @@ function createTableToSQL(stmt) {
     partition_of: partitionOf,
     query_expr: queryExpr,
     with: withExpr,
+    using: usingExpr,
   } = stmt
   const sql = [toUpper(type), toUpper(orReplace), toUpper(temporary), toUpper(keyword), toUpper(ifNotExists), tablesToSQL(table)]
   if (like) {
@@ -94,6 +95,9 @@ function createTableToSQL(stmt) {
   if (withExpr) {
     const withSQL = withExpr.map(withExprItem => [literalToSQL(withExprItem.keyword), toUpper(withExprItem.symbol), literalToSQL(withExprItem.value)].join(' ')).join(', ')
     sql.push(`WITH (${withSQL})`)
+  }
+  if (usingExpr) {
+    sql.push(`USING ${usingExpr}`)
   }
   sql.push(toUpper(ignoreReplace), toUpper(as))
   if (queryExpr) sql.push(unionToSQL(queryExpr))
