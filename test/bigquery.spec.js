@@ -870,6 +870,20 @@ describe('BigQuery', () => {
         'CREATE OR REPLACE VIEW project.database.schema AS (SELECT employee_id, first_name, last_name, salary, hire_date, modified FROM database.table WHERE salary > 50000)'
       ]
     },
+    {
+      title: 'quoted column',
+      sql: [
+        'SELECT `Customer id` FROM transactions',
+        'SELECT `Customer id` FROM transactions'
+      ]
+    },
+    {
+      title: 'math operation together with array access',
+      sql: [
+        'SELECT my_array[0]/100 FROM table1',
+        'SELECT my_array[0] / 100 FROM table1'
+      ]
+    },
   ]
 
   SQL_LIST.forEach(sqlInfo => {
@@ -927,6 +941,7 @@ describe('BigQuery', () => {
     const ast = parser.astify(sql, opt)
     const column = {
       expr: {
+        collate: null,
         type: 'column_ref',
         table: 'a',
         column: 'b',
@@ -949,5 +964,13 @@ describe('BigQuery', () => {
     sql = 'SELECT DATE_TRUNC(my_date, YEAR)'
     ast = parser.parse(sql, opt)
     expect(ast.columnList).to.be.eql(['select::null::my_date'])
+  })
+  it('should support table function in from clause', () => {
+    let sql = 'SELECT * FROM table_function();'
+    expect(getParsedSql(sql, opt)).to.equal('SELECT * FROM table_function()')
+    sql = 'SELECT * FROM table_function(1,2,3);'
+    expect(getParsedSql(sql, opt)).to.equal('SELECT * FROM table_function(1, 2, 3)')
+    sql = 'SELECT * FROM table_function(@param1, @param2, @param3);'
+    expect(getParsedSql(sql, opt)).to.equal('SELECT * FROM table_function(@param1, @param2, @param3)')
   })
 })

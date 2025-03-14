@@ -28,25 +28,33 @@ function arrayDimensionToSymbol(target) {
 }
 
 function castToSQL(expr) {
-  const { target, expr: expression, keyword, symbol, as: alias, parentheses: outParentheses } = expr
-  const { angle_brackets: angleBrackets, length, dataType, parentheses, quoted, scale, suffix: dataTypeSuffix, expr: targetExpr } = target
-  let str = targetExpr ? exprToSQL(targetExpr) : ''
-  if (length != null) str = scale ? `${length}, ${scale}` : length
-  if (parentheses) str = `(${str})`
-  if (angleBrackets) str = `<${str}>`
-  if (dataTypeSuffix && dataTypeSuffix.length) str += ` ${dataTypeSuffix.map(literalToSQL).join(' ')}`
+  const { target: targets, expr: expression, keyword, symbol, as: alias, parentheses: outParentheses } = expr
   let prefix = exprToSQL(expression)
-  let symbolChar = '::'
-  let suffix = ''
-  if (symbol === 'as') {
-    prefix = `${toUpper(keyword)}(${prefix}`
-    suffix = ')'
-    symbolChar = ` ${symbol.toUpperCase()} `
+  const result = []
+  for (let i = 0, len = targets.length; i < len; ++i) {
+    const target = targets[i]
+    const { angle_brackets: angleBrackets, length, dataType, parentheses, quoted, scale, suffix: dataTypeSuffix, expr: targetExpr } = target
+    let str = targetExpr ? exprToSQL(targetExpr) : ''
+    if (length != null) str = scale ? `${length}, ${scale}` : length
+    if (parentheses) str = `(${str})`
+    if (angleBrackets) str = `<${str}>`
+    if (dataTypeSuffix && dataTypeSuffix.length) str += ` ${dataTypeSuffix.map(literalToSQL).join(' ')}`
+    let symbolChar = '::'
+    let suffix = ''
+    const targetResult = []
+    if (symbol === 'as') {
+      if (i === 0) prefix = `${toUpper(keyword)}(${prefix}`
+      suffix = ')'
+      symbolChar = ` ${symbol.toUpperCase()} `
+    }
+    if (i === 0) targetResult.push(prefix)
+    const arrayDimension = arrayDimensionToSymbol(target)
+    targetResult.push(symbolChar, quoted, dataType, quoted, arrayDimension, str, suffix)
+    result.push(targetResult.filter(hasVal).join(''))
   }
-  if (alias) suffix += ` AS ${identifierToSql(alias)}`
-  const arrayDimension = arrayDimensionToSymbol(target)
-  const result = [prefix, symbolChar, quoted, dataType, quoted, arrayDimension, str, suffix].filter(hasVal).join('')
-  return outParentheses ? `(${result})` : result
+  if (alias) result.push(` AS ${identifierToSql(alias)}`)
+  const sql = result.filter(hasVal).join('')
+  return outParentheses ? `(${sql})` : sql
 }
 
 function extractFunToSQL(stmt) {
@@ -78,6 +86,11 @@ function flattenFunToSQL(stmt) {
   return `${toUpper(type)}(${argsStr})`
 }
 
+function funcArgToSQL(argExpr) {
+  const { name, symbol, expr } = argExpr.value
+  return [name, symbol, exprToSQL(expr)].filter(hasVal).join(' ')
+}
+
 function funcToSQL(expr) {
   const { args, array_index, name, args_parentheses, parentheses, over, suffix } = expr
   const overStr = overToSQL(over)
@@ -88,7 +101,16 @@ function funcToSQL(expr) {
   if (toUpper(funcName) === 'TRIM') separator = ' '
   let str = [funcName]
   str.push(args_parentheses === false ? ' ' : '(')
-  str.push(exprToSQL(args).join(separator))
+  const argsList = exprToSQL(args)
+  if (Array.isArray(separator)) {
+    let argsSQL = argsList[0]
+    for (let i = 1, len = argsList.length; i < len; ++i) {
+      argsSQL = [argsSQL, argsList[i]].join(` ${exprToSQL(separator[i - 1])} `)
+    }
+    str.push(argsSQL)
+  } else {
+    str.push(argsList.join(separator))
+  }
   if (args_parentheses !== false) str.push(')')
   str.push(arrayIndexToSQL(array_index))
   str = [str.join(''), suffixStr].filter(hasVal).join(' ')
@@ -115,6 +137,7 @@ export {
   castToSQL,
   extractFunToSQL,
   flattenFunToSQL,
+  funcArgToSQL,
   funcToSQL,
   jsonObjectArgToSQL,
   lambdaToSQL,

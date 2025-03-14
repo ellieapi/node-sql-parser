@@ -788,7 +788,7 @@ describe('AST', () => {
             expect(ast.where).to.eql({
                 type: 'binary_expr',
                 operator: '=',
-                left: { type: 'column_ref', table: null, column: 'id' },
+                left: { collate: null, type: 'column_ref', table: null, column: 'id' },
                 right: { type: 'number', value: 1 }
             });
         });
@@ -803,7 +803,7 @@ describe('AST', () => {
                 left: {
                     type: 'binary_expr',
                     operator: '=',
-                    left: { type: 'column_ref', table: null, column: 'id' },
+                    left: { collate: null,  type: 'column_ref', table: null, column: 'id' },
                     right: { type: 'number', value: 1 }
                 },
                 right: {
@@ -822,7 +822,7 @@ describe('AST', () => {
             expect(ast.where).to.eql({
                 type: 'binary_expr',
                 operator: '=',
-                left: { type: 'column_ref', table: null, column: 'col2' },
+                left: { collate: null, type: 'column_ref', table: null, column: 'col2' },
                 right: { type: 'string', value: 'John Doe' }
             });
         });
@@ -834,7 +834,7 @@ describe('AST', () => {
             expect(ast.where).to.eql({
                 type: 'binary_expr',
                 operator: '=',
-                left: { type: 'column_ref', table: null, column: 'isMain' },
+                left: { collate: null,  type: 'column_ref', table: null, column: 'isMain' },
                 right: { type: 'bool', value: true }
             });
         });
@@ -846,7 +846,7 @@ describe('AST', () => {
             expect(ast.where).to.eql({
                 type: 'binary_expr',
                 operator: '=',
-                left: { type: 'column_ref', table: null, column: 'col2' },
+                left: { collate: null,  type: 'column_ref', table: null, column: 'col2' },
                 right: { type: 'null', value: null }
             });
         });
@@ -858,7 +858,7 @@ describe('AST', () => {
             expect(ast.where).to.eql({
                 type: 'binary_expr',
                 operator: '=',
-                left: { type: 'column_ref', table: null, column: 'id' },
+                left: { collate: null,  type: 'column_ref', table: null, column: 'id' },
                 right: {
                     type: 'expr_list',
                     value: [
@@ -1081,6 +1081,7 @@ describe('AST', () => {
                         "type": "binary_expr",
                         "operator": operator,
                         "left": {
+                            "collate": null,
                             "type": "column_ref",
                             "table": null,
                             "column": "id"
@@ -1230,15 +1231,16 @@ describe('AST', () => {
             const expr = [
                 {
                 "expr": {
-                  "type": "column_ref",
-                  "table": null,
-                  "column": "gender"
+                    "collate": null,
+                    "type": "column_ref",
+                    "table": null,
+                    "column": "gender"
                 },
                 "as": null
                 }
             ]
             expect(orderOrPartitionByToSQL(expr, 'default')).to.equal('DEFAULT `gender`')
-          })
+        })
     })
 
     describe('transactsql', () => {
@@ -1268,8 +1270,32 @@ describe('AST', () => {
             const sql = parser.exprToSQL(ast.where);
             expect(sql).to.equal('`id` = 1');
         });
+        
+        it('should be able to get columns from ast', () => {
+            const ast = parser.astify(`SELECT
+                campaign.id,
+                ad_group.id,
+                'http://' + ad_group_ad.ad.final_urls + '?tm=123' as url,
+                ad_group_ad.resource_name,
+                ad_group_ad.policy_summary.policy_topic_entries as policy_topic_entries,
+                ad_group_ad.policy_summary.policy_topic_entries:topic as topic,
+                ad_group_ad.policy_summary.policy_topic_entries:topic + '!' as topic2
+                FROM ad_group_ad`);
+            const columns = parser.columnsToSQL(ast.columns, ast.from);
+            expect(columns).to.be.eql([
+                '`campaign`.`id`',
+                '`ad_group`.`id`',
+                "'http://' + `ad_group_ad`.`ad`.`final_urls` + '?tm=123' AS `url`",
+                '`ad_group_ad`.`resource_name`',
+                '`ad_group_ad`.`policy_summary`.`policy_topic_entries` AS `policy_topic_entries`',
+                '`ad_group_ad`.`policy_summary`.`policy_topic_entries:topic` AS `topic`',
+                "`ad_group_ad`.`policy_summary`.`policy_topic_entries:topic` + '!' AS `topic2`"
+            ])
+            expect(parser.columnsToSQL('*', ast.from)).to.be.eql([])
+            expect(parser.columnsToSQL('', ast.from)).to.be.eql([])
+        });
     })
-
+    
     describe('jsonb operator ast order', () => {
       it('should parse jsonb operator ast order correct', () => {
         const sql = `SELECT company.name
@@ -1289,6 +1315,7 @@ describe('AST', () => {
               "type": "binary_expr",
               "operator": "->>",
               "left": {
+                "collate": null,
                 "type": "column_ref",
                 "table": "company",
                 "column": {
@@ -1315,6 +1342,7 @@ describe('AST', () => {
               "type": "binary_expr",
               "operator": "->>",
               "left": {
+                "collate": null,
                 "type": "column_ref",
                 "table": "company",
                 "column": {

@@ -881,18 +881,7 @@ create_column_definition
 
 
 collate_expr
-  = KW_COLLATE __ ca:ident_name __ s:KW_ASSIGIN_EQUAL __ t:ident {
-    return {
-      type: 'collate',
-      keyword: 'collate',
-      collate: {
-        name: ca,
-        symbol: s,
-        value: t
-      }
-    }
-  }
-  / KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
+  = KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
     return {
       type: 'collate',
       keyword: 'collate',
@@ -1743,7 +1732,7 @@ column_list_item
       type: 'cast',
       expr: e,
       symbol: '::',
-      target: t
+      target: [t]
     }
   }
   / tbl:(ident __ DOT)? __ STAR {
@@ -2175,11 +2164,11 @@ set_item
   }
 
 returning_stmt
-  = k:KW_RETURNING __ c:(STAR / column_ref_list) {
-    // => { type: 'returning'; columns: column_ref_list | column_ref; }
+  = k:KW_RETURNING __ c:(column_clause / select_stmt) {
+    // => { type: 'returning'; columns: column_clause | select_stmt; }
     return {
       type: k && k.toLowerCase() || 'returning',
-      columns: c === '*' && [{ type: 'columne_ref', table: null, column: '*' }] || c
+      columns: c === '*' && [{ type: 'expr', expr: { type: 'column_ref', table: null, column: '*' }, as: null }] || c
     }
   }
 
@@ -2694,7 +2683,7 @@ column_ref
           column: '*'
       }
     }
-  / tbl:ident __ DOT __ col:column {
+  / tbl:ident __ DOT __ col:column  ce:(__ collate_expr)?{
       /* => {
         type: 'column_ref';
         table: ident;
@@ -2706,16 +2695,18 @@ column_ref
       return {
         type: 'column_ref',
         table: tbl,
-        column: col
+        column: col,
+        collate: ce && ce[1],
       };
     }
-  / col:column {
+  / col:column ce:(__ collate_expr)? {
     // => IGNORE
       columnList.add(`select::null::${col}`);
       return {
         type: 'column_ref',
         table: null,
-        column: col
+        column: col,
+        collate: ce && ce[1],
       };
     }
 
@@ -2977,7 +2968,7 @@ trim_position
   = 'BOTH'i / 'LEADING'i / 'TRAILING'i
 
 trim_rem
-  = p:trim_position? __ rm:literal_string? __ k:KW_FROM {
+  = p:trim_position? __ rm:expr? __ k:KW_FROM {
     // => expr_list
     let value = []
     if (p) value.push({type: 'origin', value: p })
@@ -3137,7 +3128,7 @@ cast_expr
       keyword: 'cast',
       expr: e,
       symbol: '::',
-      target: t
+      target: [t]
     }
   }
   / c:(KW_CAST / KW_TRY_CAST) __ LPAREN __ e:expr __ KW_AS __ t:data_type __ RPAREN {
@@ -3146,7 +3137,7 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: t
+      target: [t]
     };
   }
   / c:(KW_CAST / KW_TRY_CAST) __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ RPAREN __ RPAREN {
@@ -3155,9 +3146,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: 'DECIMAL(' + precision + ')'
-      }
+      }]
     };
   }
   / c:(KW_CAST / KW_TRY_CAST) __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ COMMA __ scale:int __ RPAREN __ RPAREN {
@@ -3166,9 +3157,9 @@ cast_expr
         keyword: c.toLowerCase(),
         expr: e,
         symbol: 'as',
-        target: {
+        target: [{
           dataType: 'DECIMAL(' + precision + ', ' + scale + ')'
-        }
+        }]
       };
     }
   / c:(KW_CAST / KW_TRY_CAST) __ LPAREN __ e:expr __ KW_AS __ s:signedness __ t:KW_INTEGER? __ RPAREN { /* MySQL cast to un-/signed integer */
@@ -3177,9 +3168,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: s + (t ? ' ' + t: '')
-      }
+      }]
     };
   }
 
@@ -3367,7 +3358,7 @@ KW_CREATE   = "CREATE"i     !ident_start
 KW_TEMPORARY = "TEMPORARY"i !ident_start
 KW_DELETE   = "DELETE"i     !ident_start
 KW_INSERT   = "INSERT"i     !ident_start
-KW_RECURSIVE= "RECURSIVE"   !ident_start
+KW_RECURSIVE= "RECURSIVE"i   !ident_start
 KW_REPLACE  = "REPLACE"i    !ident_start
 KW_RETURNING  = "RETURNING"i    !ident_start { return 'RETURNING' }
 KW_RENAME   = "RENAME"i     !ident_start

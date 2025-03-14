@@ -202,9 +202,12 @@ export type create_sequence_definition = sequence_definition_increment | sequenc
 
 export type create_sequence_definition_list = create_sequence_definition[];
 
+export type include_column = { type: 'include', keyword: 'include', columns: column_list };
+
 export interface create_index_stmt_node {
       type: 'create';
       index_type?: 'unique';
+      if_not_exists: if_not_exists_stmt;
       keyword: 'index';
       concurrently?: 'concurrently';
       index: string;
@@ -212,6 +215,7 @@ export interface create_index_stmt_node {
       table: table_name;
       index_using?: index_type;
       index_columns: column_order[];
+      include?: column_list_items;
       with?: index_option[];
       with_before_where: true;
       tablespace?: {type: 'origin'; value: string; }
@@ -318,7 +322,7 @@ export type create_column_definition = {
 
 export type column_constraint = { constraint: constraint_name; } | { nullable: literal_null | literal_not_null; default_val: default_expr; };
 
-export type collate_expr = { type: 'collate'; keyword: 'collate'; collate: { symbol: '=' ; name: ident_type; value: ident_type; }} | { type: 'collate'; keyword: 'collate'; collate: { symbol: '=' | null ; name: ident_type; }};
+export type collate_expr = { type: 'collate'; keyword: 'collate'; collate: { symbol: '=' | null ; name: ident_type; }};
 
 export type column_format = { type: 'column_format'; value: 'fixed' | 'dynamic' | 'default'; };
 
@@ -345,7 +349,15 @@ export interface drop_index_stmt_node {
         options?: 'cascade' | 'restrict';
       }
 
-export type drop_stmt = AstStatement<drop_stmt_node> | AstStatement<drop_index_stmt_node>;
+export interface drop_view_stmt_node {
+        type: 'drop';
+        prefix?: string;
+        keyword: 'view';
+        name: table_ref_list;
+        options?: view_options;
+      }
+
+export type drop_stmt = AstStatement<drop_stmt_node> | AstStatement<drop_index_stmt_node> | AstStatement<drop_view_stmt_node>;
 
 export type truncate_table_name = table_name & { suffix?: string };
 
@@ -413,7 +425,7 @@ export type ALTER_ADD_COLUMN = {
         action: 'add';
         keyword: KW_COLUMN;
         resource: 'column';
-        if_not_exists: ife;
+        if_not_exists: if_not_exists_stmt;
         type: 'alter';
       } & create_column_definition;;
 
@@ -604,6 +616,8 @@ export type reference_definition = {
     };
 
 export type on_reference = { type: 'on delete' | 'on update'; value: reference_option; };
+
+export type view_options = 'restrict' | 'cascade';;
 
 export type reference_option = { type: 'function'; name: string; args: expr_list; } | 'restrict' | 'cascade' | 'set null' | 'no action' | 'set default' | 'current_timestamp';
 
@@ -856,7 +870,9 @@ export interface select_stmt_node extends select_stmt_nake  {
        parentheses: true;
       }
 
-export type select_stmt = { type: 'select'; } | select_stmt_nake | select_stmt_node;
+export type select_stmt_parentheses = select_stmt_node;
+
+export type select_stmt = { type: 'select'; } | select_stmt_nake | select_stmt_parentheses;
 
 export type with_clause = cte_definition[] | [cte_definition & { recursive: true; }];
 
@@ -898,9 +914,9 @@ export type array_index_list = array_index[];
 
 export type expr_item = binary_column_expr & { array_index: array_index };
 
-export type cast_data_type = data_type & { quoted?: string };
+export type column_item_suffix = [{ type: 'origin'; value: string; }, quoted_ident_type | column_ref];
 
-export type column_list_item = { expr: expr; as: null; } | { type: 'cast'; expr: expr; symbol: '::'; target: cast_data_type;  as?: null; } | { expr: column_ref; as: null; } | { type: 'expr'; expr: expr; as?: alias_clause; };
+export type column_list_item = { expr: expr; as: null; } | { type: 'cast'; expr: expr; symbol: '::'; target: cast_data_type[];  as?: null; } | { expr: column_ref; as: null; } | { type: 'expr'; expr: expr; as?: alias_clause; };
 
 
 
@@ -1025,15 +1041,15 @@ export type window_specification = { name: null; partitionby: partition_by_claus
 
 export type window_specification_frameless = { name: null; partitionby: partition_by_clause; orderby: order_by_clause; window_frame_clause: null };
 
-export type window_frame_clause = string;
+export type window_frame_clause = { type: 'row'; expr: window_frame_following / window_frame_preceding } | binary_expr;
 
 export type window_frame_following = string | window_frame_current_row;
 
 export type window_frame_preceding = string | window_frame_current_row;
 
-export type window_frame_current_row = { type: 'single_quote_string'; value: string };
+export type window_frame_current_row = { type: 'origin'; value: string };
 
-export type window_frame_value = literal_string | literal_numeric;
+export type window_frame_value = { type: 'origin'; value: string } | literal_numeric;
 
 
 
@@ -1119,7 +1135,7 @@ export type value_list = value_item[];
 
 export type value_item = expr_list;
 
-export type expr_list = { type: 'expr_list'; value: expr[] };
+export type expr_list = { type: 'expr_list'; value: expr[]; parentheses?: boolean; separator?: string; };
 
 export type interval_expr = { type: 'interval', expr: expr; unit: interval_unit; };
 
@@ -1237,10 +1253,12 @@ export type column_ref = string_constants_escape | {
         schema: string;
         table: string;
         column: column | '*';
+        collate?: collate_expr;
       } | {
         type: 'column_ref';
         table: ident;
         column: column | '*';
+        collate?: collate_expr;
       };
 
 export type column_ref_quoted = unknown;
@@ -1349,7 +1367,15 @@ export type trim_func_clause = { type: 'function'; name: proc_func_name; args: e
 
 export type tablefunc_clause = { type: 'tablefunc'; name: proc_func_name; args: expr_list; as: func_call };
 
-export type func_call = trim_func_clause | tablefunc_clause | { type: 'function'; name: proc_func_name; args: expr_list; suffix: literal_string; } | { type: 'function'; name: proc_func_name; args: expr_list; over?: over_partition; } | extract_func | { type: 'function'; name: proc_func_name; over?: on_update_current_timestamp; } | { type: 'function'; name: proc_func_name; args: expr_list; };
+export type substring_funcs_clause = { type: 'function'; name: 'substring'; args: expr_list; };
+
+export type make_interval_func_args_item = { type: 'func_arg', value: { name: ident_name; symbol: '=>', value: literal_numeric; } };
+
+export type make_interval_func_args = make_interval_func_args_item[] | expr_list;
+
+export type make_interval_func_clause = { type: 'function'; name: proc_func_name; args: make_interval_func_args; };
+
+export type func_call = trim_func_clause | tablefunc_clause | substring_funcs_clause | make_interval_func_clause | { type: 'function'; name: proc_func_name; args: expr_list; suffix: literal_string; } | { type: 'function'; name: proc_func_name; args: expr_list; over?: over_partition; } | extract_func | { type: 'function'; name: proc_func_name; over?: on_update_current_timestamp; } | { type: 'function'; name: proc_func_name; args: expr_list; };
 
 export type extract_filed = 'string';
 
@@ -1359,12 +1385,14 @@ export type scalar_time_func = KW_CURRENT_DATE | KW_CURRENT_TIME | KW_CURRENT_TI
 
 export type scalar_func = scalar_time_func | KW_CURRENT_USER | KW_USER | KW_SESSION_USER | KW_SYSTEM_USER | "NTILE";
 
+export type cast_data_type = data_type & { quoted?: string };
+
 
 
 export type cast_double_colon = {
         as?: alias_clause,
         symbol: '::' | 'as',
-        target: data_type;
+        target: cast_data_type[];
       };
 
 
@@ -1419,6 +1447,10 @@ export type escape_char = string;
 export type line_terminator = string;
 
 export type literal_numeric = number | { type: 'bigint'; value: string; };
+
+type integer = never;
+
+type double_float = never;
 
 export type int = string;
 
@@ -1870,7 +1902,9 @@ export type proc_stmt = AstStatement<proc_stmt_t>;
 
 export type assign_stmt_list = assign_stmt[];
 
-export type assign_stmt = { type: 'assign'; left: var_decl | without_prefix_var_decl; symbol: ':=' | '='; right: proc_expr; };
+export type assign_stmt_timezone = { type: 'assign';  left: expr_list; symbol: 'to'; right: interval_unit; } | { type: 'assign'; left: literal_string; symbol?: 'to'; right: literal; };
+
+export type assign_stmt = assign_stmt_timezone | { type: 'assign'; left: var_decl | without_prefix_var_decl; symbol: ':=' | '='; right: proc_expr; };
 
 export type return_stmt = { type: 'return'; expr: proc_expr; };
 
@@ -1960,6 +1994,8 @@ export type enum_type = data_type;
 
 
 export type json_type = data_type;
+
+export type geometry_type_args = { length: string, scale?: number | null };
 
 
 

@@ -285,7 +285,7 @@ describe('transactsql', () => {
     const sql = 'INSERT INTO [dbo].[mytable]([value]) values( 0x11 );'
     expect(getParsedSql(sql)).to.be.equal('INSERT INTO [dbo].[mytable] (value) VALUES (0x11)')
   })
-  it('should support for xml', () => {
+  it('should support for xml / json', () => {
     const base = `SELECT Cust.CustomerID,
         OrderHeader.CustomerID,
         OrderHeader.SalesOrderID,
@@ -302,6 +302,11 @@ describe('transactsql', () => {
     expect(getParsedSql(sql)).to.be.equal(`${sqlfiyBase} FOR XML PATH([rowName])`)
     sql = [base, 'for xml path(\'\')'].join('\n')
     expect(getParsedSql(sql)).to.be.equal(`${sqlfiyBase} FOR XML PATH('')`)
+    sql = 'SELECT column_name FROM table_name FOR XML PATH';
+    expect(getParsedSql(sql)).to.be.equal(`SELECT [column_name] FROM [table_name] FOR XML PATH`)
+    sql = 'SELECT column_name FROM table_name FOR JSON PATH';
+    expect(getParsedSql(sql)).to.be.equal(`SELECT [column_name] FROM [table_name] FOR JSON PATH`)
+    
   })
   it('should support cross and outer apply', () => {
     const applies = ['cross', 'outer']
@@ -338,6 +343,20 @@ describe('transactsql', () => {
     expect(getParsedSql(sql)).to.be.equal('SET STATISTICS IO OFF')
     sql = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED'
     expect(getParsedSql(sql)).to.be.equal('SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED')
+  })
+  it('should support update from statements', () => {
+    let sql = "UPDATE CustomerDataImports SET CustomerStateImport='FL'"
+    expect(getParsedSql(sql)).to.be.equal("UPDATE [CustomerDataImports] SET [CustomerStateImport] = 'FL'")
+    sql = "UPDATE CustomerDataImports SET CustomerStateImport='FL' FROM CustomerDataImports AS t0"
+    expect(getParsedSql(sql)).to.be.equal("UPDATE [CustomerDataImports] SET [CustomerStateImport] = 'FL' FROM [CustomerDataImports] AS [t0]")
+    sql = "UPDATE CustomerDataImports SET [CustomerStateImport]='FL' FROM CustomerDataImports AS t0"
+    expect(getParsedSql(sql)).to.be.equal("UPDATE [CustomerDataImports] SET [CustomerStateImport] = 'FL' FROM [CustomerDataImports] AS [t0]")
+    sql = "UPDATE CustomerDataImports SET [CustomerStateImport] = 'FL' FROM CustomerDataImports AS t0 WHERE t0.SICCodeImport = 654"
+    expect(getParsedSql(sql)).to.be.equal("UPDATE [CustomerDataImports] SET [CustomerStateImport] = 'FL' FROM [CustomerDataImports] AS [t0] WHERE [t0].[SICCodeImport] = 654")
+    sql = "UPDATE CustomerDataImports SET [CustomerStateImport] = 'FL' WHERE t0.SICCodeImport = 654"
+    expect(getParsedSql(sql)).to.be.equal("UPDATE [CustomerDataImports] SET [CustomerStateImport] = 'FL' WHERE [t0].[SICCodeImport] = 654")
+    sql = "UPDATE CustomerDataImports SET CustomerStateImport='FL' FROM CustomerDataImports AS t0 INNER JOIN LookupEntity AS t1 ON t0.CustomerStateImport = t1.LookupValue1 WHERE t0.SheetName = 'Somethings'"
+    expect(getParsedSql(sql)).to.be.equal("UPDATE [CustomerDataImports] SET [CustomerStateImport] = 'FL' FROM [CustomerDataImports] AS [t0] INNER JOIN [LookupEntity] AS [t1] ON [t0].[CustomerStateImport] = [t1].[LookupValue1] WHERE [t0].[SheetName] = 'Somethings'")
   })
   describe('if else', () => {
     it('should support if only statement', () => {
@@ -407,6 +426,55 @@ describe('transactsql', () => {
         'SELECT [a].[username] AS [姓名] FROM [users] AS [a]'
       ]
     },
+    {
+      title: 'double quoted table mentions',
+      sql: [
+        'SELECT	a.username FROM	"users" a',
+        'SELECT [a].[username] FROM [users] AS [a]'
+      ]
+    },
+    {
+      title: 'string_agg function',
+      sql: [
+        "SELECT STRING_AGG(DISTINCT column_name, ',') AS aggregated_values FROM table_name;",
+        "SELECT STRING_AGG(DISTINCT [column_name], ',') AS [aggregated_values] FROM [table_name]"
+      ]
+    },
+    {
+      title: 'fetch and offset',
+      sql: [
+        'SELECT * FROM transactions ORDER BY created_at OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY',
+        'SELECT * FROM [transactions] ORDER BY [created_at] ASC OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY'
+      ]
+    },
+    {
+      title: 'subquery with alias in identifiers',
+      sql: [
+        'SELECT * FROM (SELECT * FROM [dummy_table]) AS [dummy_table_alias]',
+        'SELECT * FROM (SELECT * FROM [dummy_table]) AS [dummy_table_alias]'
+      ]
+    },
+    {
+      title: 'varchar max',
+      sql: [
+        'CREATE TABLE [visits] ([url] varchar(max));',
+        'CREATE TABLE [visits] ([url] VARCHAR(max))'
+      ]
+    },
+    {
+      title: 'varbinary max',
+      sql: [
+        'CREATE TABLE [visits] ([url] varbinary(max));',
+        'CREATE TABLE [visits] ([url] VARBINARY(max))'
+      ]
+    },
+    {
+      title: 'table-valued function in from clause',
+      sql: [
+        "select * from dbo.fn_name(N'000')",
+        "SELECT * FROM dbo.fn_name(N'000')"
+      ]
+    },
   ]
   SQL_LIST.forEach(sqlInfo => {
     const { title, sql } = sqlInfo
@@ -415,3 +483,4 @@ describe('transactsql', () => {
     })
   })
 })
+

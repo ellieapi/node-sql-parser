@@ -147,7 +147,7 @@ function tableToSQL(tableInfo) {
     const tableSampleSQL = ['TABLESAMPLE', exprToSQL(tablesample.expr), literalToSQL(tablesample.repeatable)].filter(hasVal).join(' ')
     result.push(tableSampleSQL)
   }
-  result.push(temporalTableToSQL(temporal_table), commonOptionConnector('AS', identifierToSql, as), operatorToSQL(operator))
+  result.push(temporalTableToSQL(temporal_table), commonOptionConnector('AS', typeof as === 'string' ? identifierToSql : exprToSQL, as), operatorToSQL(operator))
   if (table_hint) result.push(toUpper(table_hint.keyword), `(${table_hint.expr.map(tableHintToSQL).filter(hasVal).join(', ')})`)
   const tableSQL = result.filter(hasVal).join(' ')
   return tableInfo.parentheses ? `(${tableSQL})` : tableSQL
@@ -162,7 +162,17 @@ function tablesToSQL(tables) {
   if (!Array.isArray(tables)) {
     const { expr, parentheses } = tables
     const sql = tablesToSQL(expr)
-    if (parentheses) return `(${sql})`
+    if (parentheses) {
+      const leftParentheses = []
+      const rightParentheses = []
+      const parenthesesNumber = parentheses === true ? 1 : parentheses.length
+      let i = 0
+      while (i++ < parenthesesNumber) {
+        leftParentheses.push('(')
+        rightParentheses.push(')')
+      }
+      return leftParentheses.join('') + sql + rightParentheses.join('')
+    }
     return sql
   }
   const baseTable = tables[0]

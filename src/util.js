@@ -244,6 +244,9 @@ function literalToSQL(literal) {
     case 'var_string':
       str = `N'${escape(value)}'`
       break
+    case 'unicode_string':
+      str = `U&'${escape(value)}'`
+      break
     default:
       break
   }
@@ -335,7 +338,10 @@ function triggerEventToSQL(events) {
 function returningToSQL(returning) {
   if (!returning) return ''
   const { columns } = returning
-  return ['RETURNING', columns.map(columnToSQL).filter(hasVal).join(', ')].join(' ')
+  return [
+    'RETURNING',
+    columns.map(columnToSQL).filter(hasVal).join(', '),
+  ].join(' ')
 }
 
 function commonKeywordArgsToSQL(kwArgs) {

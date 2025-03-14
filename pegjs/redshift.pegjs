@@ -1233,18 +1233,7 @@ column_constraint
   }
 
 collate_expr
-  = KW_COLLATE __ ca:ident_name __ s:KW_ASSIGIN_EQUAL __ t:ident {
-    return {
-      type: 'collate',
-      keyword: 'collate',
-      collate: {
-        name: ca,
-        symbol: s,
-        value: t
-      }
-    }
-  }
-  / KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
+  = KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
     return {
       type: 'collate',
       keyword: 'collate',
@@ -2867,13 +2856,12 @@ column_list_item
     // => { expr: expr; as: null; }
     return { expr: c, as: null }
   }
-  / e:(column_ref_quoted / expr_item) __ s:KW_DOUBLE_COLON __ t:cast_data_type __ tail:(__ (additive_operator / multiplicative_operator) __ expr_item)* __ alias:alias_clause? {
+  / e:(column_ref_quoted / expr_item) __ c:cast_double_colon __ tail:(__ (additive_operator / multiplicative_operator) __ expr_item)* __ alias:alias_clause? {
     return {
+      ...c,
       as: alias,
       type: 'cast',
       expr: e,
-      symbol: '::',
-      target: t,
       tail: tail && tail[0] && { operator: tail[0][1], expr: tail[0][3] },
     }
   }
@@ -3253,12 +3241,21 @@ window_specification_frameless
 
 window_frame_clause
   = kw:KW_ROWS __ s:(window_frame_following / window_frame_preceding) {
-    // => string
-    return `rows ${s.value}`
+    return {
+      type: 'rows',
+      expr: s
+    }
   }
-  / KW_ROWS __ KW_BETWEEN __ p:window_frame_preceding __ KW_AND __ f:window_frame_following {
-    // => string
-    return `rows between ${p.value} and ${f.value}`
+  / KW_ROWS __ op:KW_BETWEEN __ p:window_frame_preceding __ KW_AND __ f:window_frame_following {
+    const left = {
+      type: 'origin',
+      value: 'rows',
+    }
+    const right = {
+      type: 'expr_list',
+      value: [p, f]
+    }
+    return createBinaryExpr(op, left, right)
   }
 
 window_frame_following
@@ -3270,23 +3267,21 @@ window_frame_following
   / window_frame_current_row
 
 window_frame_preceding
-  = s:window_frame_value __ 'PRECEDING'i  {
+  = s:window_frame_value __ k:('PRECEDING'i / 'FOLLOWING'i)  {
     // => string
-    s.value += ' PRECEDING'
+    s.value += ` ${k.toUpperCase()}`
     return s
   }
   / window_frame_current_row
 
 window_frame_current_row
   = 'CURRENT'i __ 'ROW'i {
-    // => { type: 'single_quote_string'; value: string }
-    return { type: 'single_quote_string', value: 'current row' }
+    return { type: 'origin', value: 'current row' }
   }
 
 window_frame_value
   = s:'UNBOUNDED'i {
-    // => literal_string
-    return { type: 'single_quote_string', value: s.toUpperCase() }
+    return { type: 'origin', value: s.toUpperCase() }
   }
   / literal_numeric
 
@@ -3347,13 +3342,15 @@ update_stmt
      => AstStatement<update_stmt_node>
      */
       const dbObj = {}
-      if (t) t.forEach(tableInfo => {
-        const { db, as, schema, table, join } = tableInfo
+      const addTableFun = (tableInfo) => {
+        const { server, db, schema, as, table, join } = tableInfo
         const action = join ? 'select' : 'update'
-        const fullName = [db, schema].filter(Boolean).join('.') || null
+        const fullName = [server, db, schema].filter(Boolean).join('.') || null
         if (db) dbObj[table] = fullName
         if (table) tableList.add(`${action}::${fullName}::${table}`)
-      });
+      }
+      if (t) t.forEach(addTableFun);
+      if (f) f.forEach(addTableFun);
       if(l) {
         l.forEach(col => {
           if (col.table) {
@@ -4001,30 +3998,33 @@ column_ref
           column: '*'
       }
     }
-  / schema:ident tbl:(__ DOT __ ident) col:(__ DOT __ column_type) {
+  / schema:ident tbl:(__ DOT __ ident) col:(__ DOT __ column_type) ce:(__ collate_expr)? {
       columnList.add(`select::${schema}.${tbl[3]}::${col[3].value}`);
       return {
         type: 'column_ref',
         schema: schema,
         table: tbl[3],
-        column: { expr: col[3] }
+        column: { expr: col[3] },
+        collate: ce && ce[1],
       };
     }
-  / tbl:ident __ DOT __ col:column_type {
+  / tbl:ident __ DOT __ col:column_type ce:(__ collate_expr)? {
       columnList.add(`select::${tbl}::${col.value}`);
       return {
         type: 'column_ref',
         table: tbl,
-        column: { expr: col }
+        column: { expr: col },
+        collate: ce && ce[1],
       };
     }
-  / col:column_type {
+  / col:column_type !LPAREN ce:(__ collate_expr)? {
     // => IGNORE
       columnList.add(`select::null::${col.value}`);
       return {
         type: 'column_ref',
         table: null,
-        column: { expr: col }
+        column: { expr: col },
+        collate: ce && ce[1],
       };
     }
 
@@ -4241,7 +4241,7 @@ window_fun_laglead
   }
 
 window_fun_firstlast
-  = name:KW_FIRST_LAST_VALUE __ LPAREN __ l:expr __ cn:consider_nulls_clause? __ RPAREN __ over:over_partition {
+  = name:KW_FIRST_LAST_VALUE __ LPAREN __ l:expr __ RPAREN __ cn:consider_nulls_clause? __ over:over_partition {
     // => window_fun_laglead
     return {
       type: 'window_func',
@@ -4372,7 +4372,7 @@ trim_position
   = 'BOTH'i / 'LEADING'i / 'TRAILING'i
 
 trim_rem
-  = p:trim_position? __ rm:literal_string? __ k:KW_FROM {
+  = p:trim_position? __ rm:expr? __ k:KW_FROM {
     // => expr_list
     let value = []
     if (p) value.push({type: 'origin', value: p })
@@ -4528,11 +4528,11 @@ scalar_func
   / "NTILE"i
 
 cast_double_colon
-  = s:KW_DOUBLE_COLON __ t:data_type __ alias:alias_clause? {
+  = s:(KW_DOUBLE_COLON __ data_type)+ __ alias:alias_clause? {
     return {
       as: alias,
       symbol: '::',
-      target: t,
+      target: s.map(v => v[2]),
     }
   }
 cast_expr
@@ -4543,7 +4543,7 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: t,
+      target: [t],
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ RPAREN __ RPAREN {
@@ -4553,9 +4553,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: 'DECIMAL(' + precision + ')'
-      }
+      }]
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ COMMA __ scale:int __ RPAREN __ RPAREN {
@@ -4565,9 +4565,9 @@ cast_expr
         keyword: c.toLowerCase(),
         expr: e,
         symbol: 'as',
-        target: {
+        target: [{
           dataType: 'DECIMAL(' + precision + ', ' + scale + ')'
-        }
+        }]
       };
     }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ s:signedness __ t:KW_INTEGER? __ RPAREN { /* MySQL cast to un-/signed integer */
@@ -4577,9 +4577,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: s + (t ? ' ' + t: '')
-      }
+      }]
     };
   }
   / LPAREN __ e:(or_expr / column_ref_array_index / param) __ RPAREN __ c:cast_double_colon?  {
@@ -4832,7 +4832,7 @@ KW_TEMPORARY = "TEMPORARY"i !ident_start
 KW_TEMP     = "TEMP"i !ident_start
 KW_DELETE   = "DELETE"i     !ident_start
 KW_INSERT   = "INSERT"i     !ident_start
-KW_RECURSIVE= "RECURSIVE"   !ident_start { return 'RECURSIVE'; }
+KW_RECURSIVE= "RECURSIVE"i   !ident_start { return 'RECURSIVE'; }
 KW_REPLACE  = "REPLACE"i    !ident_start
 KW_RETURNING  = "RETURNING"i    !ident_start { return 'RETURNING' }
 KW_RENAME   = "RENAME"i     !ident_start

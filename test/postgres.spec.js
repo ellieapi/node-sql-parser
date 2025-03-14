@@ -163,6 +163,19 @@ describe('Postgres', () => {
         ]
     },
     {
+      title: 'Windows Fns + Rows between following',
+      sql: [
+        `SELECT
+          SUM(column3) OVER (
+          PARTITION BY column1
+          ORDER BY column2 ASC
+          ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING
+          )
+        FROM table1;`,
+        'SELECT SUM(column3) OVER (PARTITION BY column1 ORDER BY column2 ASC ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) FROM "table1"'
+      ]
+    },
+    {
         title: 'Window Fns + ROWS unbounded preceding + current row',
         sql: [
           `SELECT
@@ -249,12 +262,12 @@ describe('Postgres', () => {
         title: 'Window Fns + FIRST_VALUE',
         sql: [
           `SELECT
-            FIRST_VALUE(user_name ignore NULLS) OVER (
+            FIRST_VALUE(user_name) ignore NULLS OVER (
                 PARTITION BY user_city
                 ORDER BY created_at, ranking
             ) AS age_window
           FROM roster`,
-          'SELECT FIRST_VALUE(user_name IGNORE NULLS) OVER (PARTITION BY user_city ORDER BY created_at ASC, ranking ASC) AS "age_window" FROM "roster"'
+          'SELECT FIRST_VALUE(user_name) IGNORE NULLS OVER (PARTITION BY user_city ORDER BY created_at ASC, ranking ASC) AS "age_window" FROM "roster"'
         ]
     },
     {
@@ -1656,6 +1669,105 @@ describe('Postgres', () => {
         'CREATE TABLE "test" AS SELECT 1'
       ]
     },
+    {
+      title: 'substring function',
+      sql: [
+        `SELECT AVG(
+            CASE
+                WHEN "duration" LIKE '%min%' THEN CAST(SUBSTRING("duration" FROM '([0-9]+)') AS INTEGER)
+                WHEN "duration" LIKE '%hr%' THEN CAST(SUBSTRING("duration" FROM '([0-9]+)') AS INTEGER) * 60
+                ELSE NULL
+            END
+        ) AS average_duration
+        FROM "netflix_shows"
+        WHERE "listed_in" ILIKE '%Thriller%'
+        LIMIT 100;`,
+        `SELECT AVG(CASE WHEN "duration" LIKE '%min%' THEN CAST(SUBSTRING("duration" FROM '([0-9]+)') AS INTEGER) WHEN "duration" LIKE '%hr%' THEN CAST(SUBSTRING("duration" FROM '([0-9]+)') AS INTEGER) * 60 ELSE NULL END) AS "average_duration" FROM "netflix_shows" WHERE "listed_in" ILIKE '%Thriller%' LIMIT 100`
+      ]
+    },
+    {
+      title: 'column at time zone',
+      sql: [
+        "SELECT start_time AT TIME ZONE 'UTC' AS start_time FROM my_table",
+        `SELECT start_time AT TIME ZONE 'UTC' AS "start_time" FROM "my_table"`
+      ]
+    },
+    {
+      title: 'column cast with at time zone',
+      sql: [
+        "SELECT start_time::timestamp AT TIME ZONE 'UTC' AS start_time FROM my_table",
+        `SELECT start_time::TIMESTAMP AT TIME ZONE 'UTC' AS "start_time" FROM "my_table"`
+      ]
+    },
+    {
+      title: 'complex at time zone',
+      sql: [
+        'select date(cast(t.start_time at time zone loc.timezone as timestamptz)) as start_time from my_table t',
+        'SELECT date(CAST("t".start_time AT TIME ZONE "loc".timezone AS TIMESTAMPTZ)) AS "start_time" FROM "my_table" AS "t"',
+      ]
+    },
+    {
+      title: 'create index with if not exists',
+      sql: [
+        'CREATE UNIQUE INDEX IF NOT EXISTS public_i_locations_pkey ON public.i_locations (id);',
+        'CREATE UNIQUE INDEX IF NOT EXISTS "public_i_locations_pkey" ON "public"."i_locations" (id)'
+      ]
+    },
+    {
+      title: 'create index with include clause',
+      sql: [
+        'CREATE INDEX ON tableName (supplier, amount) INCLUDE(id);',
+        'CREATE INDEX ON "tableName" (supplier, amount) INCLUDE (id)'
+      ]
+    },
+    {
+      title: 'limit by select stmt',
+      sql: [
+        'SELECT * FROM user LIMIT (SELECT COUNT(*) / 2 FROM user);',
+        'SELECT * FROM "user" LIMIT (SELECT COUNT(*) / 2 FROM "user")'
+      ]
+    },
+    {
+      title: 'current_timestamp with at time zone',
+      sql: [
+        "select CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS right_now, my_field FROM my_table;",
+        `SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS "right_now", my_field FROM "my_table"`
+      ]
+    },
+    {
+      title: 'cast now at time zone',
+      sql: [
+        "select CAST(now() AT TIME ZONE 'UTC' AS TIMESTAMPTZ) AS right_now, my_field FROM my_table;",
+        `SELECT CAST(now() AT TIME ZONE 'UTC' AS TIMESTAMPTZ) AS "right_now", my_field FROM "my_table"`
+      ]
+    },
+    {
+      title: 'drop view',
+      sql: [
+        'DROP VIEW view_name;',
+        'DROP VIEW "view_name"'
+      ]
+    },
+    {
+      title: 'make interval func',
+      sql: [
+        `SELECT
+            gid,
+            '2020-01-01 00:00:00'::TIMESTAMP WITH TIME ZONE + make_interval(secs => (
+                (gid - (SELECT min(gid) FROM nyct20))::FLOAT / (SELECT max(gid) - min(gid) FROM nyct20)) * 31536000 -- One year in seconds
+            ) AS generated_timestamp
+        FROM
+            nyct20;`,
+        `SELECT gid, '2020-01-01 00:00:00'::TIMESTAMP WITH TIME ZONE + MAKE_INTERVAL(secs => ((gid - (SELECT MIN(gid) FROM "nyct20"))::FLOAT / (SELECT MAX(gid) - MIN(gid) FROM "nyct20")) * 31536000) AS "generated_timestamp" FROM "nyct20"`
+      ]
+    },
+    {
+      title: 'geometry type',
+      sql: [
+        'ALTER table my_table ADD COLUMN geom geometry(Point, 4326);',
+        'ALTER TABLE "my_table" ADD COLUMN geom GEOMETRY(Point, 4326)'
+      ]
+    },
   ]
   function neatlyNestTestedSQL(sqlList){
     sqlList.forEach(sqlInfo => {
@@ -1668,9 +1780,23 @@ describe('Postgres', () => {
 
   neatlyNestTestedSQL(SQL_LIST)
 
+  describe('set time zone', () => {
+    it('should support set time zone', () => {
+      let sql = "SET TIME ZONE INTERVAL '00:00' HOUR TO MINUTE;"
+      expect(getParsedSql(sql, opt)).to.equal(sql.slice(0, -1))
+      sql = "SET TIME ZONE 'America/Los_Angeles';"
+      expect(getParsedSql(sql, opt)).to.equal(sql.slice(0, -1))
+      sql = 'SET TIME ZONE -8;'
+      expect(getParsedSql(sql, opt)).to.equal(sql.slice(0, -1))
+      sql = 'SET TIME ZONE LOCAL;'
+      expect(getParsedSql(sql, opt)).to.equal(sql.slice(0, -1))
+      sql = 'SET TIME ZONE DEFAULT;'
+      expect(getParsedSql(sql, opt)).to.equal(sql.slice(0, -1))
+    })
+  })
   describe('tables to sql', () => {
     it('should parse object tables', () => {
-      const ast = parser.astify(SQL_LIST[100].sql[0], opt)
+      const ast = parser.astify(SQL_LIST[101].sql[0], opt)
       ast[0].from[0].expr.parentheses = false
       expect(parser.sqlify(ast, opt)).to.be.equal('SELECT last_name, salary FROM "employees" INNER JOIN "salaries" ON "employees".emp_no = "salaries".emp_no')
     })
@@ -1975,6 +2101,13 @@ describe('Postgres', () => {
           `COMMENT ON DATABASE my_database IS 'Development Database'`,
         ],
       },
+      {
+        title: 'partition by func call',
+        sql: [
+          'SELECT Year, Title, ROW_NUMBER() OVER (PARTITION BY EXTRACT(YEAR FROM CreationDate)) AS rn FROM yearly_views;',
+          'SELECT Year, Title, ROW_NUMBER() OVER (PARTITION BY EXTRACT(YEAR FROM CreationDate)) AS "rn" FROM "yearly_views"'
+        ]
+      },
     ]
     neatlyNestTestedSQL(SQL_LIST)
   })
@@ -2030,6 +2163,9 @@ describe('Postgres', () => {
         }
       })
       expect(parser.sqlify(ast.ast, opt)).to.be.equals('SELECT "col1" + "col2" FROM "t1"')
+      sql = 'SELECT SUM("source"."point" + "other_source"."other_point") FROM foo';
+      ast = parser.parse(sql, opt)
+      expect(ast.columnList).to.be.eql(['select::source::point', 'select::other_source::other_point'])
     })
 
     it('should support conflict be empty', () => {

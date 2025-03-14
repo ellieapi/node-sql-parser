@@ -133,7 +133,7 @@ describe('create', () => {
 
       it('should support generated columns', () =>{
         expect(getParsedSql(`CREATE TABLE contacts (id INT KEY, first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL, fullname varchar(101) CHARACTER SET latin1 COLLATE latin1_general_cs AS (CONCAT(first_name,' ',last_name)) STORED NOT NULL);`))
-          .to.equal("CREATE TABLE `contacts` (`id` INT KEY, `first_name` VARCHAR(50) NOT NULL, `last_name` VARCHAR(50) NOT NULL, `fullname` VARCHAR(101) NOT NULL AS (CONCAT(`first_name`, ' ', `last_name`)) STORED CHARACTER SET latin1 COLLATE latin1_general_cs)");
+          .to.equal("CREATE TABLE `contacts` (`id` INT KEY, `first_name` VARCHAR(50) NOT NULL, `last_name` VARCHAR(50) NOT NULL, `fullname` VARCHAR(101) AS (CONCAT(`first_name`, ' ', `last_name`)) STORED NOT NULL CHARACTER SET latin1 COLLATE latin1_general_cs)");
 
         expect(getParsedSql(`CREATE TABLE contacts (id INT KEY, first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL, fullname varchar(101) AS (CONCAT(first_name,' ',last_name)) STORED);`))
         .to.equal("CREATE TABLE `contacts` (`id` INT KEY, `first_name` VARCHAR(50) NOT NULL, `last_name` VARCHAR(50) NOT NULL, `fullname` VARCHAR(101) AS (CONCAT(`first_name`, ' ', `last_name`)) STORED)");
@@ -144,7 +144,7 @@ describe('create', () => {
 
       it('should support generated columns with generated always', () =>{
         expect(getParsedSql(`CREATE TABLE contacts (id INT KEY, first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL, fullname varchar(101) CHARACTER SET latin1 COLLATE latin1_general_cs GENERATED ALWAYS AS (CONCAT(first_name,' ',last_name)) STORED NOT NULL);`))
-          .to.equal("CREATE TABLE `contacts` (`id` INT KEY, `first_name` VARCHAR(50) NOT NULL, `last_name` VARCHAR(50) NOT NULL, `fullname` VARCHAR(101) NOT NULL GENERATED ALWAYS AS (CONCAT(`first_name`, ' ', `last_name`)) STORED CHARACTER SET latin1 COLLATE latin1_general_cs)");
+          .to.equal("CREATE TABLE `contacts` (`id` INT KEY, `first_name` VARCHAR(50) NOT NULL, `last_name` VARCHAR(50) NOT NULL, `fullname` VARCHAR(101) GENERATED ALWAYS AS (CONCAT(`first_name`, ' ', `last_name`)) STORED NOT NULL CHARACTER SET latin1 COLLATE latin1_general_cs)");
 
         expect(getParsedSql(`CREATE TABLE contacts (id INT KEY, first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL, fullname varchar(101) GENERATED ALWAYS AS (CONCAT(first_name,' ',last_name)) VIRTUAL);`))
           .to.equal("CREATE TABLE `contacts` (`id` INT KEY, `first_name` VARCHAR(50) NOT NULL, `last_name` VARCHAR(50) NOT NULL, `fullname` VARCHAR(101) GENERATED ALWAYS AS (CONCAT(`first_name`, ' ', `last_name`)) VIRTUAL)");
@@ -307,6 +307,7 @@ describe('create', () => {
       it('should throw error, when resource unkonwn', () => {
         const columnDefinition = [{
           "column": {
+            "collate": null,
             "type": "column_ref",
             "table": null,
             "column": "id"
@@ -603,8 +604,10 @@ describe('create', () => {
       expect(getParsedSql("CREATE VIEW v (mycol) AS SELECT 'abc'")).to.equal("CREATE VIEW `v` (`mycol`) AS SELECT 'abc'")
     })
     it('should support optional setting', () => {
-      expect(getParsedSql('CREATE OR REPLACE ALGORITHM = UNDEFINED DEFINER = "abc"@"localhost" SQL SECURITY INVOKER VIEW test.v AS SELECT * FROM t WITH CHECK OPTION;')).to.equal('CREATE OR REPLACE ALGORITHM = UNDEFINED DEFINER = "abc"@"localhost" SQL SECURITY INVOKER VIEW `test`.`v` AS SELECT * FROM `t` WITH CHECK OPTION')
-      expect(getParsedSql('CREATE OR REPLACE ALGORITHM = MERGE DEFINER = \'abc\'@\'localhost\' SQL SECURITY INVOKER VIEW test.v AS SELECT * FROM t WITH CASCADED CHECK OPTION;')).to.equal('CREATE OR REPLACE ALGORITHM = MERGE DEFINER = \'abc\'@\'localhost\' SQL SECURITY INVOKER VIEW `test`.`v` AS SELECT * FROM `t` WITH CASCADED CHECK OPTION')
+      expect(getParsedSql('CREATE OR REPLACE ALGORITHM = UNDEFINED DEFINER = "abc"@"localhost" SQL SECURITY INVOKER VIEW test.v AS SELECT * FROM t WITH CHECK OPTION;')).to.equal('CREATE OR REPLACE ALGORITHM = UNDEFINED DEFINER = "abc" @ "localhost" SQL SECURITY INVOKER VIEW `test`.`v` AS SELECT * FROM `t` WITH CHECK OPTION')
+      expect(getParsedSql('CREATE OR REPLACE ALGORITHM = MERGE DEFINER = \'abc\'@\'localhost\' SQL SECURITY INVOKER VIEW test.v AS SELECT * FROM t WITH CASCADED CHECK OPTION;')).to.equal('CREATE OR REPLACE ALGORITHM = MERGE DEFINER = \'abc\' @ \'localhost\' SQL SECURITY INVOKER VIEW `test`.`v` AS SELECT * FROM `t` WITH CASCADED CHECK OPTION')
+      const sql = 'create algorithm=merge definer=`root`@`localhost` sql security definer view `viewname` as select abc'
+      expect(getParsedSql(sql)).to.equal('CREATE ALGORITHM = MERGE DEFINER = `root` @ `localhost` SQL SECURITY DEFINER VIEW `viewname` AS SELECT `abc`')
     })
   })
   it('throw error when create type is unknown', () => {

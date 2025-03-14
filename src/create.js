@@ -109,7 +109,7 @@ function createTriggerToSQL(stmt) {
     order: triggerOrder, time: triggerTime, when,
   } = stmt
   const sql = [
-    toUpper(type), toUpper(temporary), definer, toUpper(keyword),
+    toUpper(type), toUpper(temporary), exprToSQL(definer), toUpper(keyword),
     toUpper(ife), tableToSQL(trigger),
     toUpper(triggerTime),
     triggerEvents.map(event => {
@@ -182,7 +182,7 @@ function createIndexToSQL(stmt) {
     with: withExpr, with_before_where: withBeforeWhere,
   } = stmt
   const withIndexOpt = withExpr && `WITH (${indexOptionListToSQL(withExpr).join(', ')})`
-  const includeColumns = include && `${toUpper(include.keyword)} (${include.columns.map(col => identifierToSql(col)).join(', ')})`
+  const includeColumns = include && `${toUpper(include.keyword)} (${include.columns.map(col => (typeof col === 'string' ? identifierToSql(col) : exprToSQL(col))).join(', ')})`
   let indexName = index
   if (index) {
     indexName = typeof index === 'string' ? identifierToSql(index) : [identifierToSql(index.schema), identifierToSql(index.name)].filter(hasVal).join('.')
@@ -252,7 +252,7 @@ function createViewToSQL(stmt) {
     toUpper(temporary),
     toUpper(recursive),
     algorithm && `ALGORITHM = ${toUpper(algorithm)}`,
-    definer,
+    exprToSQL(definer),
     sqlSecurity && `SQL SECURITY ${toUpper(sqlSecurity)}`,
     toUpper(keyword),
     toUpper(ifNotExists),

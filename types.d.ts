@@ -51,6 +51,7 @@ export interface TableExpr {
     ast: Select;
   };
   as?: string | null;
+  parentheses: boolean | { length: number }
 }
 export interface Dual {
   type: "dual";
@@ -103,7 +104,9 @@ export interface ColumnRefItem {
   type: "column_ref";
   table: string | null;
   column: string | { expr: ValueExpr };
+  options?: ExprList;
   loc?: LocationRange;
+  collate?: { collate: CollateExpr };
 }
 export interface ColumnRefExpr {
   type: "expr";
@@ -220,6 +223,8 @@ export type ExprList = {
   type: "expr_list";
   value: ExpressionValue[];
   loc?: LocationRange;
+  parentheses?: boolean;
+  separator?: string;
 };
 
 export type PartitionBy = {
@@ -252,7 +257,7 @@ export interface Select {
   options: any[] | null;
   distinct: "DISTINCT" | null;
   columns: any[] | Column[];
-  from: From[] | null;
+  from: From[] | TableExpr | null ;
   where: Binary | Function | null;
   groupby: { columns: ColumnRef[] | null, modifiers: ValueExpr<string>[] };
   having: any[] | null;

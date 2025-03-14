@@ -364,12 +364,25 @@ describe('mysql', () => {
         ]
       },
       {
-        title: 'parentheses in from clause',
+        title: 'parentheses in from table clause',
         sql: [
           'SELECT * FROM (user), (`name`)',
           'SELECT * FROM (`user`), (`name`)'
         ]
       },
+      {
+        title: 'parentheses in from table join clause',
+        sql: [
+          `select *
+            from (\`t1\` \`eti\` join bagel on bagel.id = eti.id)
+            ;
+            select *
+            from ((\`t1\`))
+          `,
+          'SELECT * FROM (`t1` AS `eti` INNER JOIN `bagel` ON `bagel`.`id` = `eti`.`id`) ; SELECT * FROM ((`t1`))'
+        ]
+      },
+      
       {
         title: 'blob data type',
         sql: [
@@ -997,6 +1010,13 @@ describe('mysql', () => {
         ]
       },
       {
+        title: 'alter table with first column',
+        sql: [
+          "ALTER TABLE product MODIFY COLUMN type enum('one','two') NOT NULL FIRST",
+          "ALTER TABLE `product` MODIFY COLUMN `type` ENUM('one', 'two') NOT NULL FIRST"
+        ]
+      },
+      {
         title: 'create table with check constraint',
         sql: [
           'CREATE TABLE `Pattern` (`IsInterpolated` INT NOT NULL, `Value` DOUBLE, CONSTRAINT `CHK_Value_IsInterpolated` CHECK ((`Value` IS NOT NULL) OR (`IsInterpolated` = 0)));',
@@ -1061,14 +1081,14 @@ describe('mysql', () => {
         title: 'collate',
         sql: [
           'select * from test order by id COLLATE utf8mb4_unicode_ci',
-          'SELECT * FROM `test` ORDER BY `id` ASC COLLATE utf8mb4_unicode_ci'
+          'SELECT * FROM `test` ORDER BY `id` COLLATE utf8mb4_unicode_ci ASC'
         ]
       },
       {
         title: 'collate with symbol and value',
         sql: [
           'select * from test where id COLLATE utf8mb4_unicode_ci = abc',
-          'SELECT * FROM `test` WHERE `id` COLLATE utf8mb4_unicode_ci = abc'
+          'SELECT * FROM `test` WHERE `id` COLLATE utf8mb4_unicode_ci = `abc`'
         ]
       },
       {
@@ -1137,6 +1157,55 @@ describe('mysql', () => {
           'SELECT `4k_pic` FROM `table1`'
         ]
       },
+      {
+        title: 'create table not null position',
+        sql: [
+          `create table \`d\` (
+              \`id\` int (11) primary key auto_increment not null,
+              \`d_name\` varchar(15) not null,
+              \`d_id\` int(11) generated always as (cast(trim(d_name) as signed) ) virtual not null
+          );`,
+          'CREATE TABLE `d` (`id` INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY, `d_name` VARCHAR(15) NOT NULL, `d_id` INT(11) GENERATED ALWAYS AS (CAST(TRIM(`d_name`) AS SIGNED)) VIRTUAL NOT NULL)'
+        ]
+      },
+      {
+        title: 'lateral derived tables',
+        sql: [
+          'SELECT * FROM table1, LATERAL (SELECT * FROM table2 WHERE table2.id = table1.id) AS subquery',
+          'SELECT * FROM `table1`, LATERAL (SELECT * FROM `table2` WHERE `table2`.`id` = `table1`.`id`) AS `subquery`'
+        ]
+      },
+      {
+        title: 'collate expression with column',
+        sql: [
+          'SELECT users.id FROM users LEFT JOIN orders ON users.id COLLATE utf8mb4_general_ci = orders.user_id;',
+          'SELECT `users`.`id` FROM `users` LEFT JOIN `orders` ON `users`.`id` COLLATE utf8mb4_general_ci = `orders`.`user_id`',
+        ]
+      },
+      {
+        title: 'trim expr from',
+        sql: [
+          `create table \`table1\` (
+              \`id\` int primary key not null,
+              \`data\` varchar(255) not null,
+              \`removed_id\` varchar(55) GENERATED ALWAYS AS (
+                    trim(
+                        trailing concat('.',substring_index(\`data\`,'.',-(3)))
+                        from
+                        trim(leading concat(substring_index(\`data\`,'.',3),'.') from \`data\`)
+                    )
+                ) STORED
+          );`,
+          "CREATE TABLE `table1` (`id` INT NOT NULL PRIMARY KEY, `data` VARCHAR(255) NOT NULL, `removed_id` VARCHAR(55) GENERATED ALWAYS AS (TRIM(TRAILING concat('.', substring_index(`data`, '.', -(3))) FROM TRIM(LEADING concat(substring_index(`data`, '.', 3), '.') FROM `data`))) STORED)"
+        ]
+      },
+      {
+        title: 'assign with alias',
+        sql: [
+          'SELECT T2.id FROM ( SELECT @r AS _id, (SELECT @r := parent_id FROM product_category WHERE id = _id AND is_active = 1) AS parent_id, @l := @l + 1 AS lvl FROM (SELECT @r := :catId, @l := 0) vars, product_category h WHERE @r <> 0) T1 JOIN product_category T2 ON T1._id = T2.id ORDER BY T1.lvl DESC;',
+          'SELECT `T2`.`id` FROM (SELECT @r AS `_id`, (SELECT @r := `parent_id` FROM `product_category` WHERE `id` = `_id` AND `is_active` = 1) AS `parent_id`, @l := @l + 1 AS `lvl` FROM (SELECT @r := :catId, @l := 0) AS `vars`, `product_category` AS `h` WHERE @r <> 0) AS `T1` INNER JOIN `product_category` AS `T2` ON `T1`.`_id` = `T2`.`id` ORDER BY `T1`.`lvl` DESC',
+        ]
+      },
     ]
     SQL_LIST.forEach(sqlInfo => {
       const { title, sql } = sqlInfo
@@ -1153,7 +1222,7 @@ describe('mysql', () => {
       expect(parser.astify.bind(parser, sql)).to.throw('Expected "!=", "#", "#-", "#>", "#>>", "%", "&", "&&", "*", "+", ",", "-", "--", "->", "->>", "/", "/*", "<", "<<", "<=", "<>", "<@", "=", ">", ">=", ">>", "?", "?&", "?|", "@>", "AND", "BETWEEN", "IN", "IS", "LIKE", "NOT", "ON", "OR", "OVER", "REGEXP", "RLIKE", "USING", "XOR", "^", "div", "mod", "|", "||", or [ \\t\\n\\r] but ")" found.')
       expect(parser.astify.bind(parser, 'select convert("");')).to.throw('Expected "!=", "#", "#-", "#>", "#>>", "%", "&", "&&", "*", "+", ",", "-", "--", "->", "->>", "/", "/*", "<", "<<", "<=", "<>", "<@", "=", ">", ">=", ">>", "?", "?&", "?|", "@>", "AND", "BETWEEN", "COLLATE", "IN", "IS", "LIKE", "NOT", "OR", "REGEXP", "RLIKE", "USING", "XOR", "^", "div", "mod", "|", "||", or [ \\t\\n\\r] but ")" found.')
       sql = 'SELECT AVG(Quantity,age) FROM table1;'
-      expect(parser.astify.bind(parser, sql)).to.throw('Expected "!=", "#", "#-", "#>", "#>>", "%", "&", "&&", "(", ")", "*", "+", "-", "--", "->", "->>", ".", "/", "/*", "<", "<<", "<=", "<>", "<@", "=", ">", ">=", ">>", "?", "?&", "?|", "@>", "BETWEEN", "IN", "IS", "LIKE", "NOT", "REGEXP", "RLIKE", "XOR", "^", "div", "mod", "|", "||", [ \\t\\n\\r], [A-Za-z0-9_$\\x80-￿], or [A-Za-z0-9_:] but "," found.')
+      expect(parser.astify.bind(parser, sql)).to.throw('Expected "!=", "#", "#-", "#>", "#>>", "%", "&", "&&", "(", ")", "*", "+", "-", "--", "->", "->>", ".", "/", "/*", "<", "<<", "<=", "<>", "<@", "=", ">", ">=", ">>", "?", "?&", "?|", "@>", "BETWEEN", "COLLATE", "IN", "IS", "LIKE", "NOT", "REGEXP", "RLIKE", "XOR", "^", "div", "mod", "|", "||", [ \\t\\n\\r], [A-Za-z0-9_$\\x80-￿], or [A-Za-z0-9_:] but "," found')
     })
 
     it('should join multiple table with comma', () => {

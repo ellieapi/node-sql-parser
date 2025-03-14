@@ -53,6 +53,7 @@
 
     'KEY': true,
 
+    'LATERAL': true,
     'LEFT': true,
     'LIKE': true,
     'LIMIT': true,
@@ -73,6 +74,7 @@
     // 'REPLACE': true,
     'RIGHT': true,
     'READ': true, // for lock table
+    'RETURNING': true,
 
     'SELECT': true,
     'SESSION_USER': true,
@@ -740,16 +742,31 @@ create_column_definition
     }
 
 trigger_definer
-  = 'DEFINER'i __ KW_ASSIGIN_EQUAL __ u:literal_string __ '@' __ h:literal_string {
-    const userNameSymbol = u.type === 'single_quote_string' ? '\'' : '"'
-    const hostSymbol = h.type === 'single_quote_string' ? '\'' : '"'
-    return `DEFINER = ${userNameSymbol}${u.value}${userNameSymbol}@${hostSymbol}${h.value}${hostSymbol}`
+  =  'DEFINER'i __ KW_ASSIGIN_EQUAL __ u:(backticks_quoted_ident / literal_string) __ '@' __ h:(backticks_quoted_ident / literal_string) {
+    const left = { type: 'origin', value: 'definer' }
+    const operator = '='
+    const right = createBinaryExpr(u, '@', h)
+    return createBinaryExpr(operator, left, right)
   }
   / 'DEFINER'i __ KW_ASSIGIN_EQUAL __ KW_CURRENT_USER __ LPAREN __ RPAREN {
-    return `DEFINER = CURRENT_USER()`
+    const left = { type: 'origin', value: 'definer' }
+    const operator = '='
+    const right = {
+      type: 'function',
+      name: { name: [{ type: 'default', value: 'current_user' }] },
+      args:{ type: 'expr_list', value: [] },
+    }
+    return createBinaryExpr(operator, left, right)
   }
   / 'DEFINER'i __ KW_ASSIGIN_EQUAL __ KW_CURRENT_USER  {
-    return `DEFINER = CURRENT_USER`
+    const left = { type: 'origin', value: 'definer' }
+    const operator = '='
+    const right = {
+      type: 'function',
+      name: { name: [{ type: 'default', value: 'current_user' }] },
+      args:{ type: 'expr_list', value: [] },
+    }
+    return createBinaryExpr(operator, left, right)
   }
 trigger_time
   = 'BEFORE'i /  'AFTER'i
@@ -812,18 +829,7 @@ create_trigger_stmt
     }
 
 collate_expr
-  = KW_COLLATE __ ca:ident_name __ s:KW_ASSIGIN_EQUAL __ t:ident {
-    return {
-      type: 'collate',
-      keyword: 'collate',
-      collate: {
-        name: ca,
-        symbol: s,
-        value: t
-      }
-    }
-  }
-  / KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
+  = KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
     return {
       type: 'collate',
       keyword: 'collate',
@@ -1011,12 +1017,12 @@ alter_table_stmt
     }
 
 alter_column_suffix
-  = k:('after'i / 'first'i) __ i:column_ref {
-    return {
-      keyword: k,
-      expr: i
+  = k:"first"i {
+      return { keyword: k };
     }
-  }
+  / k:"after"i __ i:column_ref {
+      return { keyword: k, expr: i };
+    }
 
 alter_action_list
   = head:alter_action tail:(__ COMMA __ alter_action)* {
@@ -1915,7 +1921,10 @@ select_stmt_nake
       if ((ci && fi) || (ci && li) || (fi && li) || (ci && fi && li)) {
         throw new Error('A given SQL statement can contain at most one INTO clause')
       }
-      if(f) f.forEach(info => info.table && tableList.add(`select::${info.db}::${info.table}`));
+      if(f) {
+        const tables = Array.isArray(f) ? f : f.expr
+        tables.forEach(info => info.table && tableList.add(`select::${info.db}::${info.table}`))
+      }
       return {
           with: cte,
           type: 'select',
@@ -2031,8 +2040,8 @@ column_list_item
         as: null
       };
     }
-  / a:select_assign_stmt {
-    return { expr: a, as: null }
+  / a:select_assign_stmt __ alias:alias_clause? {
+    return { expr: a, as: alias }
   }
   / e:binary_column_expr __ alias:alias_clause? {
       return { expr: e, as: alias };
@@ -2113,8 +2122,7 @@ index_option
   / keyword_comment
 
 table_ref_list
-  = head:table_base
-    tail:table_ref* {
+  = head:table_base tail:table_ref* {
       tail.unshift(head);
       tail.forEach(tableInfo => {
         const { table, as } = tableInfo
@@ -2123,6 +2131,22 @@ table_ref_list
         refreshColumnList(columnList)
       })
       return tail;
+    }
+  / lp:LPAREN+ __ head:table_base tail:table_ref* __ rp:RPAREN+ {
+      if (lp.length !== rp.length) throw new Error('parentheses not match in from clause')
+      tail.unshift(head);
+      tail.forEach(tableInfo => {
+        const { table, as } = tableInfo
+        tableAlias[table] = table
+        if (as) tableAlias[as] = table
+        refreshColumnList(columnList)
+      })
+      return {
+        expr: tail,
+        parentheses: {
+          length: rp.length
+        } 
+      }
     }
 
 table_ref
@@ -2190,13 +2214,15 @@ table_base
       as: alias
     };
   }
-  / LPAREN __ stmt:(set_op_stmt / value_clause) __ RPAREN __ alias:alias_clause? {
+  / l:('LATERAL'i)? __ LPAREN __ stmt:(set_op_stmt / value_clause) __ RPAREN __ alias:alias_clause? {
       if (Array.isArray(stmt)) stmt = { type: 'values', values: stmt, prefix: 'row' }
       stmt.parentheses = true;
-      return {
+      const result = {
         expr: stmt,
         as: alias
-      };
+      }
+      if (l) result.prefix = l;
+      return result
     }
 
 join_op
@@ -2341,13 +2367,17 @@ delete_stmt
   = __ cte:with_clause? __ KW_DELETE    __
     t: table_ref_list? __
     f:from_clause __
-    w:where_clause? {
-     if(f) f.forEach(tableInfo => {
-        const { db, as, table, join } = tableInfo
-        const action = join ? 'select' : 'delete'
-        if (table) tableList.add(`${action}::${db}::${table}`)
-        if (!join) columnList.add(`delete::${table}::(.*)`);
-      });
+    w:where_clause? __
+    r:returning_stmt? {
+      if(f) {
+        const tables = Array.isArray(f) ? f : f.expr
+        tables.forEach(tableInfo => {
+          const { db, as, table, join } = tableInfo
+          const action = join ? 'select' : 'delete'
+          if (table) tableList.add(`${action}::${db}::${table}`)
+          if (!join) columnList.add(`delete::${table}::(.*)`);
+        })
+      }
       if (t === null && f.length === 1) {
         const tableInfo = f[0]
         t = [{
@@ -2365,7 +2395,8 @@ delete_stmt
           type: 'delete',
           table: t,
           from: f,
-          where: w
+          where: w,
+          returning: r,
         }
       };
     }
@@ -2387,6 +2418,14 @@ set_item
       return { column: c, value: v, table: tbl && tbl[0], keyword: 'values' };
   }
 
+returning_stmt
+  = k:KW_RETURNING __ c:(column_clause / select_stmt) {
+    return {
+      type: k && k.toLowerCase() || 'returning',
+      columns: c === '*' && [{ type: 'expr', expr: { type: 'column_ref', table: null, column: '*' }, as: null }] || c
+    }
+  }
+
 insert_value_clause
   = value_clause
   / select_stmt_nake
@@ -2406,7 +2445,8 @@ replace_insert_stmt
     t:table_name  __
     p:insert_partition? __ LPAREN __ c:column_list  __ RPAREN __
     v:insert_value_clause __
-    odp:on_duplicate_update_stmt? {
+    odp:on_duplicate_update_stmt? __
+    r:returning_stmt? {
       if (t) {
         tableList.add(`insert::${t.db}::${t.table}`)
         t.as = null
@@ -2434,6 +2474,7 @@ replace_insert_stmt
           partition: p,
           prefix,
           on_duplicate_update: odp,
+          returning: r,
         }
       };
     }
@@ -2445,7 +2486,8 @@ insert_no_columns_stmt
     t:table_name  __
     p:insert_partition? __
     v:insert_value_clause __
-    odp:on_duplicate_update_stmt? {
+    odp:on_duplicate_update_stmt? __
+    r:returning_stmt? {
       if (t) {
         tableList.add(`insert::${t.db}::${t.table}`)
         columnList.add(`insert::${t.table}::(.*)`);
@@ -2463,6 +2505,7 @@ insert_no_columns_stmt
           partition: p,
           prefix,
           on_duplicate_update: odp,
+          returning: r,
         }
       };
     }
@@ -2475,7 +2518,8 @@ insert_into_set
     p:insert_partition? __
     KW_SET       __
     l:set_list   __
-    odp:on_duplicate_update_stmt? {
+    odp:on_duplicate_update_stmt? __
+    r:returning_stmt? {
       if (t) {
         tableList.add(`insert::${t.db}::${t.table}`)
         columnList.add(`insert::${t.table}::(.*)`);
@@ -2493,6 +2537,7 @@ insert_into_set
           prefix,
           set: l,
           on_duplicate_update: odp,
+          returning: r,
         }
       };
     }
@@ -2826,30 +2871,36 @@ primary
   }
 
 column_ref
-  = db:(ident_name / backticks_quoted_ident) __ DOT __ tbl:(ident_name / backticks_quoted_ident) __ DOT __ col:column_without_kw {
+  = db:(ident_name / backticks_quoted_ident) __ DOT __ tbl:(ident_name / backticks_quoted_ident) __ DOT __ col:column_without_kw ce:(__ collate_expr)? {
       columnList.add(`select::${db}::${tbl}::${col}`);
       return {
         type: 'column_ref',
         db: db,
         table: tbl,
-        column: col
-      };
+        column: col,
+        collate: ce && ce[1],
+        ...getLocationObject(),
+      }
     }
-  / tbl:(ident_name / backticks_quoted_ident) __ DOT __ col:column_without_kw {
+  / tbl:(ident_name / backticks_quoted_ident) __ DOT __ col:column_without_kw ce:(__ collate_expr)? {
       columnList.add(`select::${tbl}::${col}`);
       return {
         type: 'column_ref',
         table: tbl,
-        column: col
-      };
+        column: col,
+        collate: ce && ce[1],
+        ...getLocationObject(),
+      }
   }
-  / col:column {
+  / col:column __ ce:(__ collate_expr)? {
       columnList.add(`select::null::${col}`);
       return {
         type: 'column_ref',
         table: null,
-        column: col
-      };
+        column: col,
+        collate: ce && ce[1],
+        ...getLocationObject(),
+      }
     }
 
 column_list
@@ -3059,12 +3110,21 @@ window_specification_frameless
 
 window_frame_clause
   = kw:KW_ROWS __ s:(window_frame_following / window_frame_preceding) {
-    // => string
-    return `rows ${s.value}`
+    return {
+      type: 'rows',
+      expr: s
+    }
   }
-  / KW_ROWS __ KW_BETWEEN __ p:window_frame_preceding __ KW_AND __ f:window_frame_following {
-    // => string
-    return `rows between ${p.value} and ${f.value}`
+  / KW_ROWS __ op:KW_BETWEEN __ p:window_frame_preceding __ KW_AND __ f:window_frame_following {
+    const left = {
+      type: 'origin',
+      value: 'rows',
+    }
+    const right = {
+      type: 'expr_list',
+      value: [p, f]
+    }
+    return createBinaryExpr(op, left, right)
   }
 
 window_frame_following
@@ -3076,23 +3136,21 @@ window_frame_following
   / window_frame_current_row
 
 window_frame_preceding
-  = s:window_frame_value __ 'PRECEDING'i  {
+  = s:window_frame_value __ k:('PRECEDING'i / 'FOLLOWING'i)  {
     // => string
-    s.value += ' PRECEDING'
+    s.value += ` ${k.toUpperCase()}`
     return s
   }
   / window_frame_current_row
 
 window_frame_current_row
   = 'CURRENT'i __ 'ROW'i {
-    // => { type: 'single_quote_string'; value: string }
-    return { type: 'single_quote_string', value: 'current row' }
+    return { type: 'origin', value: 'current row' }
   }
 
 window_frame_value
   = s:'UNBOUNDED'i {
-    // => literal_string
-    return { type: 'single_quote_string', value: s.toUpperCase() }
+    return { type: 'origin', value: s.toUpperCase() }
   }
   / literal_numeric
 
@@ -3205,7 +3263,7 @@ trim_position
   = 'BOTH'i / 'LEADING'i / 'TRAILING'i
 
 trim_rem
-  = p:trim_position? __ rm:literal_string? __ k:KW_FROM {
+  = p:trim_position? __ rm:expr? __ k:KW_FROM {
     let value = []
     if (p) value.push({type: 'origin', value: p })
     if (rm) value.push(rm)
@@ -3287,10 +3345,10 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: dataTypeStr,
         suffix: [{ type: 'origin', value: cs }, v],
-      },
+      }],
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ t:data_type __ RPAREN {
@@ -3299,7 +3357,7 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: t
+      target: [t]
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ RPAREN __ RPAREN {
@@ -3308,9 +3366,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: 'DECIMAL(' + precision + ')'
-      }
+      }]
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ COMMA __ scale:int __ RPAREN __ RPAREN {
@@ -3319,9 +3377,9 @@ cast_expr
         keyword: c.toLowerCase(),
         expr: e,
         symbol: 'as',
-        target: {
+        target: [{
           dataType: 'DECIMAL(' + precision + ', ' + scale + ')'
-        }
+        }]
       };
     }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ s:signedness __ t:KW_INTEGER? __ RPAREN { /* MySQL cast to un-/signed integer */
@@ -3330,9 +3388,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: [s, t].filter(Boolean).join(' ')
-      }
+      }]
     };
   }
 
@@ -3544,8 +3602,9 @@ KW_CREATE   = "CREATE"i     !ident_start
 KW_TEMPORARY = "TEMPORARY"i !ident_start
 KW_DELETE   = "DELETE"i     !ident_start
 KW_INSERT   = "INSERT"i     !ident_start
-KW_RECURSIVE= "RECURSIVE"   !ident_start
+KW_RECURSIVE= "RECURSIVE"i   !ident_start
 KW_REPLACE  = "REPLACE"i    !ident_start
+KW_RETURNING  = "RETURNING"i    !ident_start { return 'RETURNING' }
 KW_RENAME   = "RENAME"i     !ident_start
 KW_IGNORE   = "IGNORE"i     !ident_start
 KW_EXPLAIN  = "EXPLAIN"i    !ident_start

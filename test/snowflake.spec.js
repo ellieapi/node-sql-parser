@@ -448,6 +448,69 @@ describe('snowflake', () => {
         'SELECT "bi_json"."limit" AS "limit" FROM "modelc"'
       ]
     },
+    {
+      title: 'listagg function',
+      sql: [
+        'select listagg(distinct id, ", ") as ids from foo;',
+        'SELECT listagg(DISTINCT "id", ", ") AS "ids" FROM "foo"'
+      ]
+    },
+    {
+      title: 'float4 and float8 data type',
+      sql: [
+        `SELECT
+      my_column::float AS "my_number",
+      my_column::float4 AS "my_number2",
+      my_column::float8 AS "my_number3"
+    FROM
+      "my_table"`,
+      'SELECT "my_column"::FLOAT AS "my_number", "my_column"::FLOAT4 AS "my_number2", "my_column"::FLOAT8 AS "my_number3" FROM "my_table"'
+      ]
+    },
+    {
+      title: 'over window frame',
+      sql: [
+        `SELECT
+    user_id,
+    date(derived_tstamp) AS event_date,
+    price_point,
+    MAX(price_point) OVER (
+        PARTITION BY user_id
+        ORDER BY date(derived_tstamp)
+        RANGE BETWEEN INTERVAL '29 DAYS' PRECEDING AND INTERVAL '1 DAY' PRECEDING
+    ) AS max_price_point_last_30_days
+    FROM
+        some_table;`,
+        `SELECT "user_id", date("derived_tstamp") AS "event_date", "price_point", MAX("price_point") OVER (PARTITION BY "user_id" ORDER BY date("derived_tstamp") ASC RANGE BETWEEN INTERVAL '29 DAYS' PRECEDING AND INTERVAL '1 DAY' PRECEDING) AS "max_price_point_last_30_days" FROM "some_table"`
+      ]
+    },
+    {
+      title: 'window function with range',
+      sql: [
+        `SELECT
+          SUM(id) OVER (
+            PARTITION BY
+              name
+            ORDER BY
+              created_at ASC RANGE BETWEEN INTERVAL '9 DAYS' PRECEDING
+              AND CURRENT ROW 
+          ) last10Dmatches
+        FROM
+          model1`,
+        `SELECT SUM("id") OVER (PARTITION BY "name" ORDER BY "created_at" ASC RANGE BETWEEN INTERVAL '9 DAYS' PRECEDING AND CURRENT ROW) AS "last10Dmatches" FROM "model1"`
+      ]
+    },
+    {
+      title: 'window function ignore null',
+      sql: [
+        `SELECT
+          LAST_VALUE(ac_install_date)
+              IGNORE NULLS
+              OVER (PARTITION BY player_id ORDER BY date DESC) AS ac_install_date
+          FROM some_table;`,
+        'SELECT LAST_VALUE("ac_install_date") IGNORE NULLS OVER (PARTITION BY "player_id" ORDER BY "date" DESC) AS "ac_install_date" FROM "some_table"'
+      ]
+    },
   ]
   SQL_LIST.forEach(sqlInfo => {
     const { title, sql } = sqlInfo

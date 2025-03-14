@@ -30,6 +30,7 @@
     'EXPLAIN': true,
 
     'FALSE': true,
+    'FETCH': true,
     'FROM': true,
     'FULL': true,
 
@@ -438,18 +439,7 @@ create_column_definition
     }
 
 collate_expr
-  = KW_COLLATE __ ca:ident_name __ s:KW_ASSIGIN_EQUAL __ t:ident {
-    return {
-      type: 'collate',
-      keyword: 'collate',
-      collate: {
-        name: ca,
-        symbol: s,
-        value: t
-      }
-    }
-  }
-  / KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
+  = KW_COLLATE __ s:KW_ASSIGIN_EQUAL? __ ca:ident {
     return {
       type: 'collate',
       keyword: 'collate',
@@ -909,9 +899,7 @@ table_option
 
 
 ALTER_ADD_FULLETXT_SPARITAL_INDEX
-  = KW_ADD __
-    fsid:create_fulltext_spatial_index_definition
-     {
+  = KW_ADD __ fsid:create_fulltext_spatial_index_definition {
       return {
         action: 'add',
         type: 'alter',
@@ -1357,12 +1345,14 @@ update_stmt
     l:set_list   __
     w:where_clause? {
       const dbObj = {}
-      if (t) t.forEach(tableInfo => {
-        const { db, as, table, join } = tableInfo
+      const addTableFun = (tableInfo) => {
+        const { server, db, schema, as, table, join } = tableInfo
         const action = join ? 'select' : 'update'
-        if (db) dbObj[table] = db
-        if (table) tableList.add(`${action}::${db}::${table}`)
-      });
+        const fullName = [server, db, schema].filter(Boolean).join('.') || null
+        if (db) dbObj[table] = fullName
+        if (table) tableList.add(`${action}::${fullName}::${table}`)
+      }
+      if (t) t.forEach(addTableFun);
       if(l) {
         l.forEach(col => {
           if (col.table) {
@@ -1836,20 +1826,22 @@ jsonb_expr
   }
 
 column_ref
-  = tbl:ident __ DOT __ col:column_without_kw {
+  = tbl:ident __ DOT __ col:column_without_kw ce:(__ collate_expr)? {
       columnList.add(`select::${tbl}::${col}`);
       return {
         type: 'column_ref',
         table: tbl,
-        column: col
+        column: col,
+        collate: ce && ce[1],
       };
     }
-  / col:column {
+  / col:column ce:(__ collate_expr)? {
       columnList.add(`select::null::${col}`);
       return {
         type: 'column_ref',
         table: null,
-        column: col
+        column: col,
+        collate: ce && ce[1],
       };
     }
 
@@ -2068,7 +2060,7 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: t
+      target: [t]
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ RPAREN __ RPAREN {
@@ -2077,9 +2069,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: 'DECIMAL(' + precision + ')'
-      }
+      }]
     };
   }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ KW_DECIMAL __ LPAREN __ precision:int __ COMMA __ scale:int __ RPAREN __ RPAREN {
@@ -2088,9 +2080,9 @@ cast_expr
         keyword: c.toLowerCase(),
         expr: e,
         symbol: 'as',
-        target: {
+        target: [{
           dataType: 'DECIMAL(' + precision + ', ' + scale + ')'
-        }
+        }]
       };
     }
   / c:KW_CAST __ LPAREN __ e:expr __ KW_AS __ s:signedness __ t:KW_INTEGER? __ RPAREN { /* MySQL cast to un-/signed integer */
@@ -2099,9 +2091,9 @@ cast_expr
       keyword: c.toLowerCase(),
       expr: e,
       symbol: 'as',
-      target: {
+      target: [{
         dataType: s + (t ? ' ' + t: '')
-      }
+      }]
     };
   }
 
@@ -2277,7 +2269,7 @@ KW_CREATE   = "CREATE"i     !ident_start
 KW_TEMPORARY = "TEMPORARY"i !ident_start
 KW_DELETE   = "DELETE"i     !ident_start
 KW_INSERT   = "INSERT"i     !ident_start
-KW_RECURSIVE= "RECURSIVE"   !ident_start
+KW_RECURSIVE= "RECURSIVE"i   !ident_start
 KW_REPLACE  = "REPLACE"i    !ident_start
 KW_RENAME   = "RENAME"i     !ident_start
 KW_IGNORE   = "IGNORE"i     !ident_start
