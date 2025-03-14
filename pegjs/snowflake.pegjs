@@ -4412,6 +4412,8 @@ KW_CAST     = "CAST"i       !ident_start { return 'CAST' }
 KW_BINARY = "BINARY"i !ident_start { return 'BINARY'; }
 KW_VARBINARY = "VARBINARY"i !ident_start { return 'VARBINARY'; }
 
+KW_VARIANT = "VARIANT"i !ident_start { return 'VARIANT' }
+
 KW_BOOL     = "BOOL"i     !ident_start { return 'BOOL'; }
 KW_BOOLEAN  = "BOOLEAN"i  !ident_start { return 'BOOLEAN'; }
 KW_CHAR     = "CHAR"i     !ident_start { return 'CHAR'; }
@@ -4814,6 +4816,7 @@ data_type
   / binary_type
   / geography_type
   / oid_type
+  / variant_type
 
 
 array_type
@@ -4832,6 +4835,9 @@ array_type
 
 boolean_type
   = t:(KW_BOOL / KW_BOOLEAN) { /* => data_type */ return { dataType: t }}
+
+variant_type
+  = t:(KW_VARIANT) { /* => data_type */ return { dataType: t }}
 
 binary_type
   = t:(KW_BINARY / KW_VARBINARY) __ LPAREN __ l:[0-9]+ __ r:(COMMA __ [0-9]+)? __ RPAREN __ s:numeric_type_suffix?  { /* => data_type */ return { dataType: t, length: parseInt(l.join(''), 10), scale: r && parseInt(r[2].join(''), 10), parentheses: true, suffix: s  }; }
