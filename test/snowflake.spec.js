@@ -511,6 +511,18 @@ describe('snowflake', () => {
         'SELECT LAST_VALUE("ac_install_date") IGNORE NULLS OVER (PARTITION BY "player_id" ORDER BY "date" DESC) AS "ac_install_date" FROM "some_table"'
       ]
     },
+    {
+      title: 'variant data type works in snowflake queries',
+      sql: [
+        `
+          CREATE TABLE "table_with_variant" (
+              "int" INT,
+              PRIMARY KEY ("int"),
+              "variant" VARIANT
+          );
+        `
+      ]
+    }
   ]
   SQL_LIST.forEach(sqlInfo => {
     const { title, sql } = sqlInfo
